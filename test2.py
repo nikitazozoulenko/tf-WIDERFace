@@ -2,9 +2,7 @@ import numpy as np
 
 MAX_NUM_OBJECTS = 1968
 LIST_LENGTH = 12880
-directory = "E:\Datasets\WIDER\wider_face_split/wider_face_train_bbx_gt.txt"
-
-
+directory = "/hdd/Data/wider_face_split/wider_face_train_bbx_gt.txt"
 
 filenames = []
 num_objects = []

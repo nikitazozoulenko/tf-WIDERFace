@@ -5,7 +5,7 @@ import tensorflow as tf
 import numpy as np
 from resnet import *
 
-batch_size = 10
+batch_size = 2
 
 def inference(x, is_training):
     #Nonex259x259x3 input image
@@ -52,13 +52,15 @@ def inference(x, is_training):
     with tf.variable_scope("yolo_layers"):
         B = 2
         C = 20
-        yolo_tensor = conv_wrapper(x, shape = [1,1,256,B*5], strides = [1, 1, 1, 1], padding = "VALID")
+        yolo_tensor = conv_wrapper(x, shape = [1,1,256,B*5 + C], strides = [1, 1, 1, 1], padding = "VALID")
 
         box_tensor = yolo_tensor[:,:,:,0:8]
 
         confidence_tensor = tf.nn.sigmoid(yolo_tensor[:,:,:,8:10])
-        
-    return box_tensor, confidence_tensor
+
+        class_tensor = yolo_tensor[:,:,:,10:30]
+        class_tensor = tf.nn.softmax(class_tensor)
+    return box_tensor, confidence_tensor, class_tensor
 
 def iou(box1, box2):
     #input
@@ -88,22 +90,23 @@ def iou(box1, box2):
 
     return iou
 
-def condition(batch_count, obj_idx, num_objects, loss, box_tensor, confidence_tensor, gt):
+def condition(batch_count, obj_idx, num_objects, loss, box_tensor, confidence_tensor, class_tensor, gt):
     return obj_idx < num_objects
 
-def body(batch_count, obj_idx, num_objects, batch_loss, box_tensor, confidence_tensor, gt):
-    S = tf.constant(7.0)
-        
+def body(batch_count, obj_idx, num_objects, batch_loss, box_tensor, confidence_tensor, class_tensor, gt):
     #do shit
     batch_coord_loss = batch_loss[0]
     batch_confidence_loss = batch_loss[1]
+    batch_class_loss = batch_loss[2]
 
     gt_box = gt[batch_count, obj_idx, 0:4]
+    gt_class_idx = tf.cast(gt[batch_count, obj_idx, 4], tf.int32)
     xmin = gt_box[0]
     ymin = gt_box[1]
     xmax = gt_box[2]
     ymax = gt_box[3]
 
+    S = tf.constant(7.0)
     cell_y = tf.cast(tf.floor((ymin + ymax)/2 * S), tf.int32)
     cell_x = tf.cast(tf.floor((xmin + xmax)/2 * S), tf.int32)
 
@@ -140,12 +143,17 @@ def body(batch_count, obj_idx, num_objects, batch_loss, box_tensor, confidence_t
     gt_conf = tf.constant(1.0)
     pred_conf = confidence_tensor[batch_count, cell_y, cell_x, box_index]
     batch_confidence_loss += -gt_conf * tf.log(pred_conf)
+
+    #class loss
+    gt_prob = tf.constant(1.0)
+    pred_prob = class_tensor[batch_count, cell_y, cell_x, gt_class_idx]
+    batch_class_loss += -gt_prob * tf.log(pred_prob)
     
     #iterate
     obj_idx += 1
-    return batch_count, obj_idx, num_objects, [batch_coord_loss, batch_confidence_loss], box_tensor, confidence_tensor, gt
+    return batch_count, obj_idx, num_objects, [batch_coord_loss, batch_confidence_loss, batch_class_loss], box_tensor, confidence_tensor, class_tensor, gt
 
-def loss(box_tensor, confidence_tensor, gt, num_objects):
+def loss(box_tensor, confidence_tensor, class_tensor, gt, num_objects):
     #yolo_tensor is batch_size x 7 x 7 x 10       ### P, X, Y, WIDTH, HEIGHT, P, X, Y, WIDTH, HEIGHT
     #class_tensor is batch_size x 7 x 7 x 20      ### 20C
     #gt is (batch_size, num_objects, 5)     ### xmin, ymin, xmax, ymax, class prediction index
@@ -153,52 +161,62 @@ def loss(box_tensor, confidence_tensor, gt, num_objects):
 
     coord_loss = tf.constant(0.0)
     confidence_loss = tf.constant(0.0)
+    class_loss = tf.constant(0.0)
 
     for batch_count in range(batch_size):
         #while loop
         batch_coord_loss = tf.constant(0.0)
         batch_confidence_loss = tf.constant(0.0)
+        batch_class_loss = tf.constant(0.0)
 
         obj_idx = tf.constant(0)
         result = tf.while_loop(condition, body,
-            [batch_count, obj_idx, 1,
-            [batch_coord_loss, batch_confidence_loss],
-             box_tensor, confidence_tensor, gt])
+            [batch_count, obj_idx, num_objects[batch_count, 0],
+            [batch_coord_loss, batch_confidence_loss, batch_class_loss],
+            box_tensor, confidence_tensor, class_tensor, gt])
         batch_loss = result[3]
 
         batch_coord_loss += batch_loss[0]
         batch_confidence_loss += batch_loss[1]
+        batch_class_loss += batch_loss[2]
 
         coord_loss = batch_coord_loss
         confidence_loss = batch_confidence_loss
+        class_loss = batch_class_loss
 
     alpha_coord = 3.0
+    alpha_class = 1.0
+
     coord_loss = coord_loss * alpha_coord / batch_size
     confidence_loss = confidence_loss / batch_size
+    class_loss = class_loss * alpha_class / batch_size
+    tf.summary.scalar("coord_loss", coord_loss)
+    tf.summary.scalar("confidence_loss", confidence_loss)
+    tf.summary.scalar("class_loss", class_loss)
 
-    total_loss = coord_loss + confidence_loss
+    total_loss = coord_loss + confidence_loss + class_loss
+    tf.summary.scalar("coord_loss", coord_loss)
     
     return total_loss
 
 def detect_objects(box_tensor, confidence_tensor, class_tensor):
-    # #yolo_tensor is None x 7 x 7 x 10       ### P, X, Y, WIDTH, HEIGHT, P, X, Y, WIDTH, HEIGHT
-    # #class_tensor is None x 7 x 7 x 20      ### 20C
+    #yolo_tensor is None x 7 x 7 x 10       ### P, X, Y, WIDTH, HEIGHT, P, X, Y, WIDTH, HEIGHT
+    #class_tensor is None x 7 x 7 x 20      ### 20C
 
-    # box1_confidence = confidence_tensor[0, :, :, 0]
-    # box2_confidence = confidence_tensor[0, :, :, 1]
-    # box_confidences = tf.stack([box1_confidence, box2_confidence]) #2, 7, 7
+    box1_confidence = confidence_tensor[0, :, :, 0]
+    box2_confidence = confidence_tensor[0, :, :, 1]
+    box_confidences = tf.stack([box1_confidence, box2_confidence]) #2, 7, 7
 
-    # class_confidences = tf.reduce_max(class_tensor[0,:,:,:], axis = 2)
-    # class_conf = tf.stack([class_confidences, class_confidences])
+    class_confidences = tf.reduce_max(class_tensor[0,:,:,:], axis = 2)
+    class_conf = tf.stack([class_confidences, class_confidences])
 
-    # probs = box_confidences * class_conf
-    # classes = tf.argmax(class_tensor[0,:,:,:], axis = 2)
+    probs = box_confidences * class_conf
+    classes = tf.argmax(class_tensor[0,:,:,:], axis = 2)
 
-    # box1 = box_tensor[0, :, :, 0:4]
-    # box2 = box_tensor[0, :, :, 4:8]
-    # boxes = tf.stack([box1, box2]) #2, 7, 7
-    # return boxes, classes, probs
-    return None, None, None
+    box1 = box_tensor[0, :, :, 0:4]
+    box2 = box_tensor[0, :, :, 4:8]
+    boxes = tf.stack([box1, box2]) #2, 7, 7
+    return boxes, classes, probs
 
 def process_boxes(threshold, boxes, classes, probs):
     final_boxes = []

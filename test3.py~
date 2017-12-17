@@ -8,7 +8,7 @@ import os
 from PIL import Image
 import xml.etree.ElementTree as ET
 
-batch_size = 10
+batch_size = 2
 
 MAX_NUM_OBJECTS = 1968
 LIST_LENGTH = 12880
@@ -45,8 +45,8 @@ with open(directory + "wider_face_split/wider_face_train_bbx_gt.txt", "r") as f:
 
 def python_function():
     #randomize which file to read
-    #index = np.random.randint(0, LIST_LENGTH)
-    index = np.random.randint(0, 100)
+    index = np.random.randint(0, LIST_LENGTH)
+    #index = 1
     #read corresponding jpeg
     num_objects = im_num_objects[index]
     image = Image.open(directory + "WIDER_train/images/" + images_filenames[index])
@@ -62,31 +62,6 @@ def python_function():
 
     image_array = image_array.astype(np.float32)
     gt_array = gt_array.astype(np.float32)
-
-    num_objects = np.array(num_objects, dtype = np.int32)
-    
     return [image_array, gt_array, num_objects]
 
-def create_enqueue_op(queue):
-    #read gt and jpeg with PIL with a python function wrapper
-    resized_image_array, gt_array, gt_num_objects = tf.py_func(python_function,
-                [],
-                [tf.float32, tf.float32, tf.int32])
-    return queue.enqueue([resized_image_array, gt_array, [gt_num_objects]])
-
-def create_queue():
-    num_threads = 5
-    # create the queue
-    queue = tf.FIFOQueue(capacity=1000, shapes = [[259, 259, 3],[MAX_NUM_OBJECTS, 4], [1]], dtypes=[tf.float32, tf.float32, tf.int32])
-
-    # create our enqueue_op for this queue
-    enqueue_op = create_enqueue_op(queue)
-
-    # create a QueueRunner and add to queue runner list, probably only need 1 thread
-    tf.train.add_queue_runner(tf.train.QueueRunner(queue, [enqueue_op] * num_threads))
-    return queue
-
-def get_next_batch():
-    # create a queue and dequeue batch_size
-    queue = create_queue()
-    return queue.dequeue_many(batch_size)
+print(python_function())
