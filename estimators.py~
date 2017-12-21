@@ -1,18 +1,21 @@
 from __future__ import division
 from __future__ import print_function
+from __future__ import absolute_import
 
 import tensorflow as tf
 import numpy as np
 from resnet import *
 
-from PIL import Image, ImageDraw
+from WIDER_queue_train import get_next_train_batch
 
-batch_size = 128
-S = 7
+# Training Parameters
+learning_rate = 0.001
+batch_size = 10
 
-def inference(x, is_training = tf.constant(True), reuse = tf.constant(False)):
+def inference(features, is_training = True, reuse = False):
     #Nonex259x259x3 input image
     #model used is ResNet-18, modified to fit the tiny imagenet dataset
+    x = features["x"]
     with tf.variable_scope("yolo_resnet", reuse = reuse):
         with tf.variable_scope("conv1", reuse = reuse):
             with tf.variable_scope("h1_conv_bn", reuse = reuse):
@@ -93,7 +96,9 @@ def iou(box1, box2):
 def condition(batch_count, obj_idx, num_objects, loss, box_tensor, confidence_tensor, gt):
     return obj_idx < num_objects
 
-def body(batch_count, obj_idx, num_objects, batch_loss, box_tensor, confidence_tensor, gt):     
+def body(batch_count, obj_idx, num_objects, batch_loss, box_tensor, confidence_tensor, gt):
+    S = tf.constant(7.0)
+        
     #do shit
     batch_coord_loss = batch_loss[0]
     batch_confidence_loss = batch_loss[1]
@@ -146,8 +151,8 @@ def body(batch_count, obj_idx, num_objects, batch_loss, box_tensor, confidence_t
     return batch_count, obj_idx, num_objects, [batch_coord_loss, batch_confidence_loss], box_tensor, confidence_tensor, gt
 
 def loss(box_tensor, confidence_tensor, gt, num_objects):
-    #box_tensor is batch_size x S x S x 8       ### X, Y, WIDTH, HEIGHT, X, Y, WIDTH, HEIGHT
-    #confidence_tensor is batch_size x S x S x 2
+    #yolo_tensor is batch_size x 7 x 7 x 10       ### P, X, Y, WIDTH, HEIGHT, P, X, Y, WIDTH, HEIGHT
+    #class_tensor is batch_size x 7 x 7 x 20      ### 20C
     #gt is (batch_size, num_objects, 5)     ### xmin, ymin, xmax, ymax, class prediction index
     #num_objects is [batch_size]
 
@@ -161,9 +166,9 @@ def loss(box_tensor, confidence_tensor, gt, num_objects):
 
         obj_idx = tf.constant(0)
         result = tf.while_loop(condition, body,
-                               [batch_count, obj_idx, 1,
-                               [batch_coord_loss, batch_confidence_loss],
-                               box_tensor, confidence_tensor, gt])
+            [batch_count, obj_idx, 1,
+            [batch_coord_loss, batch_confidence_loss],
+             box_tensor, confidence_tensor, gt])
         batch_loss = result[3]
 
         batch_coord_loss += batch_loss[0]
@@ -175,78 +180,62 @@ def loss(box_tensor, confidence_tensor, gt, num_objects):
     alpha_coord = 3.0
     coord_loss = coord_loss * alpha_coord / batch_size
     confidence_loss = confidence_loss / batch_size
-    tf.summary.scalar("coord_loss", coord_loss)
-    tf.summary.scalar("confidence_loss", confidence_loss)
 
     total_loss = coord_loss + confidence_loss
-    tf.summary.scalar("total_loss", total_loss)
     
     return total_loss
 
-def non_max_suppression(boxes, confidences):
-    #boxs is batch_size x S x S x 8       ### X, Y, WIDTH, HEIGHT, X, Y, WIDTH, HEIGHT
-    #confidences is batch_size x S x S x 2
+# Define the model function (following https://github.com/aymericdamien/TensorFlow-Examples)
+def model_fn(features, labels, mode):
+    # Because Batch Normalization has different behavior at training and prediction time, we
+    # need to create 2 distinct computation graphs that still share the same weights.
+    box_tensor_train, confidence_tensor_train  = inference(features, is_training = tf.constant(True), reuse = False)
+    box_tensor_test, confidence_tensor_test  = inference(features, is_training = tf.constant(False), reuse = True)
 
-    ##ONLY WORKS FOR BATCH SIZE = 1, STILL 4D TENSOR
+    # If PREDICT  mode, early return
+    if mode == tf.estimator.ModeKeys.PREDICT:
+        #return tf.estimator.EstimatorSpec(mode, predictions=[box_tensor_test, confidence_tensor_test])
+        return tf.estimator.EstimatorSpec(mode, predictions=box_tensor_test)
 
-    #RESHAPE into the needed format
-    #need shape  [y1, x1, y2, x2], where (y1, x1) and (y2, x2)
-    #boxes: A 2-D float Tensor of shape [num_boxes, 4].
-    b0y = tf.reshape(boxes[0,:,:,1], [-1])
-    b1y = tf.reshape(boxes[0,:,:,5], [-1])
-    y1 = tf.concat([b0y, b1y], 0)
-
-    b0x = tf.reshape(boxes[0,:,:,0], [-1])
-    b1x = tf.reshape(boxes[0,:,:,4], [-1])
-    x1 = tf.concat([b0x, b1x], 0)
-
-    b0h = tf.reshape(boxes[0,:,:,3], [-1])
-    b1h = tf.reshape(boxes[0,:,:,7], [-1])
-    y2 = tf.concat([b0y+b0h, b1y+b1h], 0)
-
-    b0w = tf.reshape(boxes[0,:,:,2], [-1])
-    b1w = tf.reshape(boxes[0,:,:,6], [-1])
-    x2 = tf.concat([b0x+b0w, b1x+b1w], 0)
-
-    boxes = tf.stack([y1, x1, y2, x2], axis = 1)
-
-    #confidences
-    b0conf = tf.reshape(confidences[0,:,:,0], [-1])
-    b1conf = tf.reshape(confidences[0,:,:,1], [-1])
-    scores = tf.concat([b0conf, b1conf], 0)
-
-    #non-maximum suppression with tensorflows own implementation
-    selected_indices = tf.image.non_max_suppression(boxes, scores, S*S*2)
-
-    return boxes, scores, selected_indices
-
-def process_boxes(boxes, scores, indices, threshold):
-    boxes = boxes[indices]
-    scores = scores[indices]
-    scores = scores.reshape(boxes.shape[0], 1)
-    print("SHAAAAAAAAAAAAAAAAAPEEEEEEEEEEES")
-    print(boxes.shape)
-    print(scores.shape)
-    combined_boxes = np.concatenate((boxes, scores), axis=1)
-
-    processed_boxes = np.array([box for box in combined_boxes if box[4] > threshold])
-
-    return processed_boxes
-
-def draw_and_show_boxes(image_array, boxes, border_size, color):
-    im = Image.fromarray((image_array[0,:,:,:]*255).astype(np.uint8))
-    im.show()
-    dr = ImageDraw.Draw(im)
+    # Define loss and optimizer
+    gt = labels[0]
+    num_objects = labels[1]
+    train_loss_op = loss(box_tensor_train, confidence_tensor_train, gt, num_objects)
+    test_loss_op = loss(box_tensor_test, confidence_tensor_test, gt, num_objects)
     
-    for i in range(boxes.shape[1]):
-        coords = (boxes[i, 0:4] * 259).astype(int)
-        y0 = coords[0]
-        x0 = coords[1]
-        y1 = coords[2]
-        x1 = coords[3]
+    train_op = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(train_loss_op)
 
-        for j in range(border_size):
-            final_coords = [x0+j, y0+j, x1-j, y1-j]
-            dr.rectangle(final_coords, outline = color)
-            
-    im.show()
+    # If train mode, use train time ops
+    if mode == tf.estimator.ModeKeys.TRAIN:
+        return tf.estimator.EstimatorSpec(
+            mode = mode,
+            #predictions = [box_tensor_train, confidence_tensor_train],
+            predictions = box_tensor_train,
+            loss = train_loss_op,
+            train_op = train_op)
+
+
+    # If EVAL mode, use test time ops
+    return tf.estimator.EstimatorSpec(
+        mode = mode,
+        #predictions = [box_tensor_test, confidence_tensor_test],
+        predictions = box_tensor_test,
+        loss = test_loss_op)
+
+# Build the Estimator
+model = tf.estimator.Estimator(model_fn)
+
+# Define the input function for training
+def input_fn_train():
+    image_op, gt_op, num_objects_op = get_next_train_batch()
+    features = {"x" : image_op}
+    labels = [gt_op, num_objects_op]
+    return features, labels
+
+# Train the Model
+model.train(input_fn_train, steps=10)
+
+# Use the Estimator 'evaluate' method
+e = model.evaluate(input_fn)
+
+print("Testing Accuracy:", e["loss"])

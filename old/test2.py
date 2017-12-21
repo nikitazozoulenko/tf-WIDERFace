@@ -1,8 +1,8 @@
 import numpy as np
 
 MAX_NUM_OBJECTS = 1968
-LIST_LENGTH = 12880
-directory = "/hdd/Data/wider_face_split/wider_face_train_bbx_gt.txt"
+LIST_LENGTH = 3226
+directory = "/hdd/Data/wider_face_split/wider_face_val_bbx_gt.txt"
 
 filenames = []
 num_objects = []
@@ -33,4 +33,4 @@ with open(directory, "r") as f:
                 gt_array[image_count, i, 3] = float(line[1]) + float(line[3]) #ymax = ymin + height
                 i += 1
 
-print(filenames)
+print(len(filenames))

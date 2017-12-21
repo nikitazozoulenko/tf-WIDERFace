@@ -2,6 +2,18 @@ import tensorflow as tf
 
 EPSILON = 0.00001
 
+def variable_summaries(var):
+  """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
+  with tf.name_scope('summaries'):
+    mean = tf.reduce_mean(var)
+    tf.summary.scalar('mean', mean)
+    with tf.name_scope('stddev'):
+      stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+    tf.summary.scalar('stddev', stddev)
+    tf.summary.scalar('max', tf.reduce_max(var))
+    tf.summary.scalar('min', tf.reduce_min(var))
+    tf.summary.histogram('histogram', var)
+
 def conv_wrapper(x, shape, strides, padding):
     weights = tf.get_variable("weights",
                               shape,
@@ -10,7 +22,8 @@ def conv_wrapper(x, shape, strides, padding):
                              [shape[3]],
                              initializer = tf.constant_initializer(0.1))
 
-    #tf.histogram_summary("weights_summary", weights)
+    #variable_summaries(weights)
+    #variable_summaries(biases)
 
     conv = tf.nn.conv2d(x,
                         weights,
@@ -33,6 +46,11 @@ def bn_wrapper(x, is_training):
                                       [x.get_shape()[-1]],
                                       initializer = tf.constant_initializer(1.0),
                                       trainable = False)
+    #variable_summaries(gamma)
+    #variable_summaries(beta)
+    #variable_summaries(moving_mean)
+    #variable_summaries(moving_variance)
+    
     return tf.cond(is_training,
                    lambda: bn_train_time(x, beta, gamma, moving_mean, moving_variance),
                    lambda: bn_test_time(x, beta, gamma, moving_mean, moving_variance))
@@ -60,25 +78,25 @@ def bn_test_time(x, beta, gamma, moving_mean, moving_variance):
                                      scale = gamma,
                                      variance_epsilon = EPSILON)
 
-def residual_block(x, C, is_training):
-    with tf.variable_scope("h1_conv_bn"):
+def residual_block(x, C, is_training, reuse = False):
+    with tf.variable_scope("h1_conv_bn", reuse = reuse):
         conv1 = conv_wrapper(x, shape = [3,3,C,C], strides = [1, 1, 1, 1], padding = "SAME")
         bn1 = bn_wrapper(conv1, is_training)
     relu1 = tf.nn.relu(bn1)
-    with tf.variable_scope("h2_conv_bn"):
+    with tf.variable_scope("h2_conv_bn", reuse = reuse):
         conv2 = conv_wrapper(relu1, shape = [3,3,C,C], strides = [1, 1, 1, 1], padding = "SAME")
         bn2 = bn_wrapper(conv2, is_training)
 
     res = x + bn2
     return tf.nn.relu(res)
 
-def residual_block_reduce_size(x, C, is_training):
+def residual_block_reduce_size(x, C, is_training, reuse = False):
     last_C = x.get_shape().as_list()[-1]
-    with tf.variable_scope("h1_conv_bn"):
+    with tf.variable_scope("h1_conv_bn", reuse = reuse):
         conv1 = conv_wrapper(x, shape = [3,3,last_C,C], strides = [1, 2, 2, 1], padding = "VALID")
         bn1 = bn_wrapper(conv1, is_training)
     relu1 = tf.nn.relu(bn1)
-    with tf.variable_scope("h2_conv_bn"):
+    with tf.variable_scope("h2_conv_bn", reuse = reuse):
         conv2 = conv_wrapper(relu1, shape = [3,3,C,C], strides = [1, 1, 1, 1], padding = "SAME")
         bn2 = bn_wrapper(conv2, is_training)
 

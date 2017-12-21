@@ -1,0 +1,6 @@
+import numpy as np
+
+
+x = np.arange(13*2).reshape(13,2)
+print(x)
+print(x.shape)
