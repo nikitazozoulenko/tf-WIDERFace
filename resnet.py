@@ -78,6 +78,7 @@ def bn_test_time(x, beta, gamma, moving_mean, moving_variance):
                                      scale = gamma,
                                      variance_epsilon = EPSILON)
 
+<<<<<<< HEAD
 def residual_block(x, C, is_training, reuse):
     res_block = residual_block_without_skip(x, C, is_training, reuse)
     res = x + res_block
@@ -189,3 +190,28 @@ def resnet50_conv5_x(x, is_training, reuse):
             x = residual_block(x, channels, is_training, reuse)
     return x
   
+=======
+def residual_block(x, C, is_training, reuse = False):
+    with tf.variable_scope("h1_conv_bn", reuse = reuse):
+        conv1 = conv_wrapper(x, shape = [3,3,C,C], strides = [1, 1, 1, 1], padding = "SAME")
+        bn1 = bn_wrapper(conv1, is_training)
+    relu1 = tf.nn.relu(bn1)
+    with tf.variable_scope("h2_conv_bn", reuse = reuse):
+        conv2 = conv_wrapper(relu1, shape = [3,3,C,C], strides = [1, 1, 1, 1], padding = "SAME")
+        bn2 = bn_wrapper(conv2, is_training)
+
+    res = x + bn2
+    return tf.nn.relu(res)
+
+def residual_block_reduce_size(x, C, is_training, reuse = False):
+    last_C = x.get_shape().as_list()[-1]
+    with tf.variable_scope("h1_conv_bn", reuse = reuse):
+        conv1 = conv_wrapper(x, shape = [3,3,last_C,C], strides = [1, 2, 2, 1], padding = "VALID")
+        bn1 = bn_wrapper(conv1, is_training)
+    relu1 = tf.nn.relu(bn1)
+    with tf.variable_scope("h2_conv_bn", reuse = reuse):
+        conv2 = conv_wrapper(relu1, shape = [3,3,C,C], strides = [1, 1, 1, 1], padding = "SAME")
+        bn2 = bn_wrapper(conv2, is_training)
+
+    return tf.nn.relu(bn2)
+>>>>>>> origin

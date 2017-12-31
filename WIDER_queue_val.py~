@@ -8,11 +8,7 @@ import os
 from PIL import Image
 import xml.etree.ElementTree as ET
 
-<<<<<<< HEAD
-batch_size = 4
-=======
-batch_size = 128
->>>>>>> origin
+batch_size = 32
 
 MAX_NUM_OBJECTS = 1968
 LIST_LENGTH = 3226

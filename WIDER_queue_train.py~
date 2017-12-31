@@ -8,14 +8,10 @@ import os
 from PIL import Image
 import xml.etree.ElementTree as ET
 
-<<<<<<< HEAD
-batch_size = 4
-=======
-batch_size = 128
->>>>>>> origin
+batch_size = 8
 
 MAX_NUM_OBJECTS = 1968
-LIST_LENGTH = 3226
+LIST_LENGTH = 12880
 directory = "/hdd/Data/"
 
 images_filenames = []
@@ -26,7 +22,7 @@ image_count = -1
 i = 0
 read_num_obj = False
 next_num_objects = 0
-with open(directory + "wider_face_split/wider_face_val_bbx_gt.txt", "r") as f:
+with open(directory + "wider_face_split/wider_face_train_bbx_gt.txt", "r") as f:
     for line in f:
         if ".jpg" in line:
             images_filenames.append(line.rstrip())
@@ -49,10 +45,11 @@ with open(directory + "wider_face_split/wider_face_val_bbx_gt.txt", "r") as f:
 
 def python_function():
     #randomize which file to read
-    index = np.random.randint(0, LIST_LENGTH)
+    #index = np.random.randint(0, LIST_LENGTH)
+    index = np.random.randint(0, 100)
     #read corresponding jpeg
     num_objects = im_num_objects[index]
-    image = Image.open(directory + "WIDER_val/images/" + images_filenames[index])
+    image = Image.open(directory + "WIDER_train/images/" + images_filenames[index])
     im_width, im_height = image.size
     gt_array = np.zeros((MAX_NUM_OBJECTS, 4))
     gt_array[0:num_objects, 0:1] = gt_unprocessed[index, 0:num_objects, 0:1] / im_width
@@ -78,7 +75,7 @@ def create_enqueue_op(queue):
     return queue.enqueue([resized_image_array, gt_array, [gt_num_objects]])
 
 def create_queue():
-    num_threads = 5
+    num_threads = 12
     # create the queue
     queue = tf.FIFOQueue(capacity=1000, shapes = [[259, 259, 3],[MAX_NUM_OBJECTS, 4], [1]], dtypes=[tf.float32, tf.float32, tf.int32])
 
@@ -89,7 +86,8 @@ def create_queue():
     tf.train.add_queue_runner(tf.train.QueueRunner(queue, [enqueue_op] * num_threads))
     return queue
 
-def get_next_val_batch():
+def get_next_train_batch():
     # create a queue and dequeue batch_size
     queue = create_queue()
     return queue.dequeue_many(batch_size)
+

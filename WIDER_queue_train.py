@@ -5,10 +5,17 @@ import numpy as np
 import tensorflow as tf
 import threading
 import os
+<<<<<<< HEAD
 from PIL import Image, ImageOps
 import xml.etree.ElementTree as ET
 
 batch_size = 4
+=======
+from PIL import Image
+import xml.etree.ElementTree as ET
+
+batch_size = 128
+>>>>>>> origin
 
 MAX_NUM_OBJECTS = 1968
 LIST_LENGTH = 12880
@@ -45,8 +52,13 @@ with open(directory + "wider_face_split/wider_face_train_bbx_gt.txt", "r") as f:
 
 def python_function():
     #randomize which file to read
+<<<<<<< HEAD
     index = np.random.randint(0, LIST_LENGTH)
     random = np.random.randint(0,2)
+=======
+    #index = np.random.randint(0, LIST_LENGTH)
+    index = np.random.randint(0, 500)
+>>>>>>> origin
     #read corresponding jpeg
     num_objects = im_num_objects[index]
     image = Image.open(directory + "WIDER_train/images/" + images_filenames[index])
@@ -58,6 +70,7 @@ def python_function():
     gt_array[0:num_objects, 3:4] = gt_unprocessed[index, 0:num_objects, 3:4] / im_height
 
     image = image.resize((259,259))
+<<<<<<< HEAD
 
     if(random == 0):
         image = ImageOps.mirror(image)
@@ -70,6 +83,8 @@ def python_function():
         #xmax = 1-xmin
         gt_array[0:num_objects, 2:3] = 1 - temp_xmin
         
+=======
+>>>>>>> origin
     image_array = (np.asarray(image) / 255)
 
     image_array = image_array.astype(np.float32)
@@ -87,7 +102,11 @@ def create_enqueue_op(queue):
     return queue.enqueue([resized_image_array, gt_array, [gt_num_objects]])
 
 def create_queue():
+<<<<<<< HEAD
     num_threads = 32
+=======
+    num_threads = 12
+>>>>>>> origin
     # create the queue
     queue = tf.FIFOQueue(capacity=1000, shapes = [[259, 259, 3],[MAX_NUM_OBJECTS, 4], [1]], dtypes=[tf.float32, tf.float32, tf.int32])
 
