@@ -189,8 +189,7 @@ def resnet50_conv5_x(x, is_training, reuse):
         with tf.variable_scope("residual_block_3", reuse = reuse):
             x = residual_block(x, channels, is_training, reuse)
     return x
-  
-=======
+
 def residual_block(x, C, is_training, reuse = False):
     with tf.variable_scope("h1_conv_bn", reuse = reuse):
         conv1 = conv_wrapper(x, shape = [3,3,C,C], strides = [1, 1, 1, 1], padding = "SAME")
@@ -214,4 +213,3 @@ def residual_block_reduce_size(x, C, is_training, reuse = False):
         bn2 = bn_wrapper(conv2, is_training)
 
     return tf.nn.relu(bn2)
->>>>>>> origin
