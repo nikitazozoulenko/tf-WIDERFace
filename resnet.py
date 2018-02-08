@@ -78,7 +78,6 @@ def bn_test_time(x, beta, gamma, moving_mean, moving_variance):
                                      scale = gamma,
                                      variance_epsilon = EPSILON)
 
-<<<<<<< HEAD
 def residual_block(x, C, is_training, reuse):
     res_block = residual_block_without_skip(x, C, is_training, reuse)
     res = x + res_block
